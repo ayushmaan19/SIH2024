@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Upload and Table Extraction</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .passed { color: green; }
+    .failed { color: red; }
+    #errorMessage { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="heading"> 
+    <h1>Upload PDF and see the possibility of doping</h1>
+  </div>
+  
+  <form id="pdfForm" enctype="multipart/form-data">
+    <label for="pdfInput">Choose a PDF file:</label>
+    <input type="file" name="pdf" id="pdfInput" accept="application/pdf" required /><br><br>
+    <button type="submit">Upload and Extract Data</button>
+  </form>
+
+  <div id="result">
+    <h2>Results:</h2>
+    <div id="errorMessage"></div>
+    <ul id="resultList"></ul>
+  </div>
+
+  <script>
+    document.getElementById('pdfForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const formData = new FormData();
+      const fileInput = document.getElementById('pdfInput');
+      formData.append('pdf', fileInput.files[0]);
+
+      const resultList = document.getElementById('resultList');
+      const errorMessage = document.getElementById('errorMessage');
+      
+      resultList.innerHTML = ''; 
+      errorMessage.textContent = ''; 
+
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Received data:', data);
+
+        if (data.results && Array.isArray(data.results)) {
+          data.results.forEach(result => {
+            const li = document.createElement('li');
+            li.textContent = `${result.element}: ${result.passed ? 'Passed' : 'Failed'}`;
+            li.className = result.passed ? 'passed' : 'failed';
+            resultList.appendChild(li);
+          });
+        } else {
+          errorMessage.textContent = 'No valid results received from the server.';
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        errorMessage.textContent = 'An error occurred while processing the PDF. Please try again.';
+      });
+    });
+  </script>
+</body>
+</html>

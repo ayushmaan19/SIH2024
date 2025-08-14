@@ -1,0 +1,22 @@
+{
+  "name": "sih2024",
+  "version": "1.0.0",
+  "description": "sih code format",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
+  "author": "Ayushmaan Kumar yadav",
+  "license": "ISC",
+  "dependencies": {
+    "console-clear": "^1.1.1",
+    "express": "^4.19.2",
+    "fs": "^0.0.1-security",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

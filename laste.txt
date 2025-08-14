@@ -1,0 +1,365 @@
+const express = require("express");
+const multer = require("multer");
+const fs = require("fs");
+const pdfParse = require("pdf-parse");
+const path = require("path");
+
+const app = express();
+const PORT = 3000;
+
+// Set up multer storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const upload = multer({ storage: storage });
+
+// Predefined units to filter (specified by coder)
+const unitsToFilter = {
+  pg: [],
+  // mg: [],
+};
+
+// Helper function to split each row into separate elements based on patterns (spaces, numbers, units)
+const splitRowIntoElements = (row) => {
+  return row
+    .replace(/([a-zA-Z])(?=\d)/g, "$1 ") // Add space between letters and numbers (e.g., "pg2.7" -> "pg 2.7")
+    .replace(/(\d)(?=[a-zA-Z])/g, "$1 ") // Add space between numbers and letters (e.g., "2.7pg" -> "2.7 pg")
+    .replace(/(?=\d)(?<=\d\w)/g, " ") // Separate units like "pg", "mg", and "%".
+    .trim()
+    .split(/\s+/); // Split by one or more spaces
+};
+
+// Process pg array with its own set of conditions
+function processPgArray(arrayName, arrayData) {
+  arrayData.forEach((array) => {
+    if (array.length >= 5) {
+      const firstElement = array[0]; // Get the first element
+      let fifthElement = array[3]; // Get the 3rd element for pg condition
+      let oddElement = unitsToFilter["pg"][6][4]; // Get a specific element for pg condition
+      let OEN = parseFloat(oddElement);
+
+      // Convert the fifth element to a number for comparison
+      let fifthElementAsNumber = parseFloat(fifthElement);
+
+      // Define custom conditions for pg array
+      if (firstElement === "19-NE-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 1`);
+      } else if (firstElement === "E-AC" && fifthElementAsNumber <= 2.0) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 2`);
+      } else if (firstElement === "A-AC" && fifthElementAsNumber <= 2.0) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 3`);
+      } else if (firstElement === "DHEA-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 4`);
+      } else if (firstElement === "11-KE-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 5`);
+      } else if (firstElement === "DHT-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 6`);
+      } else if (firstElement === "5" && OEN <= 1.7) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 7`);
+      } else if (firstElement === "EpiT-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 8`);
+      } else if (firstElement === "T-AC" && fifthElementAsNumber <= 0.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 9`);
+      } else if (firstElement === "11-OHA-" && fifthElementAsNumber <= 0.2) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 10`);
+      } else {
+        console.log(`${firstElement} in ${arrayName} failed LOD conditions`);
+      }
+    } else {
+      console.log(
+        `Array ${array[0]} in ${arrayName} does not have 5 elements, skipping.`
+      );
+    }
+  });
+}
+
+// Process mg array with its own set of conditions
+
+
+// Serve static files from the 'public' directory (this includes func.html)
+app.use(express.static("public"));
+
+// Serve func.html when accessing the root URL '/'
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "func.html"));
+});
+
+// Route for uploading the PDF and extracting table data, filtering by units
+app.post("/upload", upload.single("pdf"), async (req, res) => {
+  const pdfPath = req.file.path;
+
+  try {
+    // Step 1: Read and parse the PDF file
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    // Step 2: Extract text and normalize new lines
+    const cleanedText = pdfData.text
+      .replace(/\r\n|\r|\n/g, "\n") // Normalize new lines
+      .trim();
+
+    // Step 3: Split text into rows based on new line characters
+    const rows = cleanedText.split("\n").map((row) => {
+      // Split row into words/columns by spaces or tabs and store as array
+      return splitRowIntoElements(row); // Use the helper function to split each row into elements
+    });
+
+    // Step 4: Filter data by predefined units
+    rows.forEach((row) => {
+      row.forEach((word) => {
+        if (word.includes("pg")) {
+          unitsToFilter["pg"].push(row);
+        }
+        // else if (word.includes("mg")) {
+        //   unitsToFilter["mg"].push(row);
+        // }
+      });
+    });
+
+    // Step 5: Process pg array
+    processPgArray("pg", unitsToFilter["pg"]);
+
+    // Step 6: Process mg array
+    // processMgArray("mg", unitsToFilter["mg"]);
+
+    // Step 7: Save the filtered arrays into JSON format
+    const jsonFilePath = writeJsonToFile(
+      unitsToFilter,
+      path.basename(req.file.originalname, ".pdf")
+    );
+
+    // Return the JSON response with the filtered arrays
+    res.json({
+      message:
+        "PDF uploaded, table data extracted, conditions checked successfully.",
+      jsonFilePath: jsonFilePath,
+      filteredData: unitsToFilter,
+    });
+  } catch (err) {
+    console.error("Error during PDF processing:", err);
+    res.status(500).json({ message: "Error processing PDF", error: err });
+  }
+});
+
+// Helper function to write JSON data to a file
+function writeJsonToFile(data, fileName) {
+  const jsonFilePath = path.join(__dirname, "uploads", fileName + ".json");
+  fs.writeFileSync(jsonFilePath, JSON.stringify(data, null, 2));
+  return jsonFilePath;
+}
+
+// Middleware to parse JSON request body
+app.use(express.json());
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Upload and Table Extraction</title>
+   <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Upload PDF and Extract Table Data with Filtering by Units</h1>
+  
+  <!-- Form for uploading the PDF -->
+  <form id="pdfForm" enctype="multipart/form-data">
+    <label for="pdfInput">Choose a PDF file:</label>
+    <input type="file" name="pdf" id="pdfInput" accept="application/pdf" required /><br><br>
+    <button type="submit">Upload and Extract Data</button>
+  </form>
+
+  <!-- Div to display results -->
+  <div id="result">
+    <h2>Filtered Data:</h2>
+    <pre id="tableData"></pre>
+  </div>
+
+  <!-- JavaScript to handle form submission and display data -->
+  <script>
+    document.getElementById('pdfForm').addEventListener('submit', function (e) {
+      e.preventDefault(); // Prevent form from submitting the default way
+
+      const formData = new FormData();
+      const fileInput = document.getElementById('pdfInput');
+      formData.append('pdf', fileInput.files[0]);
+
+      // Make the request to the backend to upload and process the PDF
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Display the filtered data
+        const tableDataDiv = document.getElementById('tableData');
+        tableDataDiv.innerHTML = JSON.stringify(data.filteredData, null, 2); // Display JSON formatted data
+      })
+      .catch(error => {
+        console.error('Error:', error);
+      });
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+const express = require("express");
+const multer = require("multer");
+const fs = require("fs");
+const pdfParse = require("pdf-parse");
+const path = require("path");
+
+const app = express();
+const PORT = 3000;
+
+// Set up multer storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const upload = multer({ storage: storage });
+
+// Predefined units to filter
+const unitsToFilter = {
+  "pg": [],
+};
+
+// Helper function to split each row into separate elements
+const splitRowIntoElements = (row) => {
+  return row
+    .replace(/([a-zA-Z])(?=\d)/g, "$1 ")
+    .replace(/(\d)(?=[a-zA-Z])/g, "$1 ")
+    .replace(/(?=\d)(?<=\d\w)/g, " ")
+    .trim()
+    .split(/\s+/);
+};
+
+// Process pg array with its own set of conditions
+function processPgArray(arrayName, arrayData) {
+  const results = [];
+  arrayData.forEach((array) => {
+    if (array.length >= 5) {
+      const firstElement = array[0];
+      let fifthElement = array[3];
+      let oddElement = arrayData[6][4];
+      let OEN = parseFloat(oddElement);
+      let fifthElementAsNumber = parseFloat(fifthElement);
+
+      let result = { element: firstElement, passed: false };
+
+      // Define custom conditions for pg array
+      if (firstElement === "19-NE-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 1`);
+      } else if (firstElement === "E-AC" && fifthElementAsNumber <= 2.0) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 2`);
+      } else if (firstElement === "A-AC" && fifthElementAsNumber <= 2.0) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 3`);
+      } else if (firstElement === "DHEA-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 4`);
+      } else if (firstElement === "11-KE-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 5`);
+      } else if (firstElement === "DHT-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 6`);
+      } else if (firstElement === "5" && OEN <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 7`);
+      } else if (firstElement === "EpiT-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 8`);
+      } else if (firstElement === "T-AC" && fifthElementAsNumber <= 0.1) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 9`);
+      } else if (firstElement === "11-OHA-3-AC" && fifthElementAsNumber <= 0.2) {
+        result.passed = true;
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 10`);
+      }
+
+      results.push(result);
+    }
+  });
+  return results;
+}
+
+app.use(express.static("public"));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "func.html"));
+});
+
+app.post("/upload", upload.single("pdf"), async (req, res) => {
+  const pdfPath = req.file.path;
+
+  try {
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    const cleanedText = pdfData.text.replace(/\r\n|\r|\n/g, "\n").trim();
+    const rows = cleanedText.split("\n").map(splitRowIntoElements);
+
+    rows.forEach((row) => {
+      row.forEach((word) => {
+        if (word.includes("pg")) {
+          unitsToFilter["pg"].push(row);
+        }
+      });
+    });
+
+    const pgResults = processPgArray("pg", unitsToFilter["pg"]);
+
+    console.log(JSON.stringify(unitsToFilter, null, 2)); // Log full JSON to console
+
+    const jsonFilePath = writeJsonToFile(
+      unitsToFilter,
+      path.basename(req.file.originalname, ".pdf")
+    );
+
+    res.json({
+      message: "PDF processed successfully.",
+      jsonFilePath: jsonFilePath,
+      results: pgResults,
+    });
+  } catch (err) {
+    console.error("Error during PDF processing:", err);
+    res.status(500).json({ message: "Error processing PDF", error: err });
+  }
+});
+
+function writeJsonToFile(data, fileName) {
+  const jsonFilePath = path.join(__dirname, "uploads", fileName + ".json");
+  fs.writeFileSync(jsonFilePath, JSON.stringify(data, null, 2));
+  return jsonFilePath;
+}
+
+app.use(express.json());
+
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});

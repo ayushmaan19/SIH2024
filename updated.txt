@@ -1,0 +1,195 @@
+const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
+const pdfParse = require('pdf-parse');
+const path = require('path');
+
+const app = express();
+const PORT = 3000;
+
+// Set up multer storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+
+const upload = multer({ storage: storage });
+
+// Predefined units to filter (specified by coder)
+const unitsToFilter = {
+  "pg": [],
+  "mg": []
+};
+
+// Helper function to split each row into separate elements based on patterns (spaces, numbers, units)
+const splitRowIntoElements = (row) => {
+  return row
+    .replace(/([a-zA-Z])(?=\d)/g, '$1 ')    // Add space between letters and numbers (e.g., "pg2.7" -> "pg 2.7")
+    .replace(/(\d)(?=[a-zA-Z])/g, '$1 ')    // Add space between numbers and letters (e.g., "2.7pg" -> "2.7 pg")
+    .replace(/(?=\d)(?<=\d\w)/g, ' ')       // Separate units like "pg", "mg", and "%".
+    .trim()
+    .split(/\s+/);                          // Split by one or more spaces
+};
+  let oddElement = unitsToFilter["pg"][6][3];  // Get the fifth element (0-indexed)
+      let OEN =parseFloat(oddElement);
+// Process pg array with its own set of conditions
+function processPgArray(arrayName, arrayData) {
+  arrayData.forEach(array => {
+    if (array.length >= 5) {
+      const firstElement = array[0];  // Get the first element
+      let fifthElement = array[2]; 
+      
+      // Convert the fifth element to a number for comparison
+      let fifthElementAsNumber = parseFloat(fifthElement);
+
+      // Define custom conditions for pg array
+      if (firstElement==="19-NE-AC" && fifthElementAsNumber <= 2.7) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 1`);
+      } if (firstElement==="E-AC" && fifthElementAsNumber <= 2.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 2`);
+      } if (firstElement==="A-AC" && fifthElementAsNumber <= 3.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 3`);
+      } if (firstElement==="DHEA-AC" && fifthElementAsNumber <= 3.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 4`);
+      } if (firstElement==="11-KE-AC" && fifthElementAsNumber <= 4.6) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 5`);
+      }if (firstElement==="DHT-AC" && fifthElementAsNumber <= 5.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 6`);
+      }if (firstElement==="5" &&  OEN<= 1.7) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 7`);
+      }if (firstElement==="EpiT-AC" && fifthElementAsNumber <= 18.8) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 8`);
+      }if (firstElement==="T-AC" && fifthElementAsNumber <= 15.8) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 9`);
+      }if (firstElement==="11-OHA-" && fifthElementAsNumber <= 40.0) {
+        console.log(`${firstElement} in ${arrayName} passed LOD condition 10`);
+      }
+      else {
+        console.log(`${firstElement} in ${arrayName} failed LOD conditions`);
+      }
+    } else {
+      console.log(`Array ${firstElement} in ${arrayName} does not have 5 elements, skipping.`);
+    }
+  });
+}
+
+// Process mg array with its own set of conditions
+function processMgArray(arrayName, arrayData) {
+  arrayData.forEach(array => {
+    if (array.length >= 5) {
+      const firstElement = array[0];  // Get the first element
+      let fifthElement = array[4];    // Get the fifth element (0-indexed)
+      let oddElement2 = unitsToFilter["mg"][6][5];  // Get the fifth element (0-indexed)
+      let OEN2 =parseFloat(oddElement2);
+      // Convert the fifth element to a number for comparison
+      let fifthElementAsNumber = parseFloat(fifthElement);
+
+      // Define custom conditions for mg array
+      if (firstElement==="19-NE-AC" && fifthElementAsNumber <= 2.7) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition 1`);
+      } if (firstElement==="E-AC" && fifthElementAsNumber <= 2.1) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition 1.5`);
+      } if (firstElement==="A-AC" && fifthElementAsNumber <= 3.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition 2`);
+      } if (firstElement==="DHEA-AC" && fifthElementAsNumber <= 3.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 2`);
+      } if (firstElement==="11-KE-AC" && fifthElementAsNumber <= 4.6) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 1`);
+      }if (firstElement==="DHT-AC" && fifthElementAsNumber <= 5.5) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 1`);
+      }if (firstElement==="5" &&  OEN2<= 1.7) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 1`);
+      }if (firstElement==="EpiT-AC" && fifthElementAsNumber <= 18.8) {
+        console.log(`${firstElement} in ${arrayName} passed mg condition for greater than 1`);
+      }if (firstElement==="T-AC" && fifthElementAsNumber <= 15.8) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 1`);
+      }if (firstElement==="11-OHA-" && fifthElementAsNumber <= 40.0) {
+        console.log(`${firstElement} in ${arrayName} passed LOQ condition for greater than 1`);
+      }
+      else {
+        console.log(`${firstElement} in ${arrayName} failed LOQ conditions`);
+      }
+    } else {
+      console.log(`Array ${firstElement} in ${arrayName} does not have 5 elements, skipping.`);
+    }
+  });
+}
+
+// Serve static files from the 'public' directory (this includes func.html)
+app.use(express.static('public'));
+
+// Serve func.html when accessing the root URL '/'
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'func.html'));
+});
+
+// Route for uploading the PDF and extracting table data, filtering by units
+app.post('/upload', upload.single('pdf'), async (req, res) => {
+  const pdfPath = req.file.path;
+
+  try {
+    // Step 1: Read and parse the PDF file
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdfData = await pdfParse(pdfBuffer);
+
+    // Step 2: Extract text and normalize new lines
+    const cleanedText = pdfData.text
+      .replace(/\r\n|\r|\n/g, '\n')  // Normalize new lines
+      .trim();
+
+    // Step 3: Split text into rows based on new line characters
+    const rows = cleanedText.split('\n').map(row => {
+      // Split row into words/columns by spaces or tabs and store as array
+      return splitRowIntoElements(row);  // Use the helper function to split each row into elements
+    });
+
+    // Step 4: Filter data by predefined units
+    rows.forEach(row => {
+      row.forEach(word => {
+        if (word.includes("pg")) {
+          unitsToFilter["pg"].push(row);
+        } else if (word.includes("mg")) {
+          unitsToFilter["mg"].push(row);
+        }
+      });
+    });
+
+    // Step 5: Process pg array
+    processPgArray("pg", unitsToFilter["pg"]);
+
+    // Step 6: Process mg array
+    processMgArray("mg", unitsToFilter["mg"]);
+
+    // Step 7: Save the filtered arrays into JSON format
+    const jsonFilePath = writeJsonToFile(unitsToFilter, path.basename(req.file.originalname, '.pdf'));
+
+    // Return the JSON response with the filtered arrays
+    res.json({
+      message: 'PDF uploaded, table data extracted, conditions checked successfully.',
+      jsonFilePath: jsonFilePath,
+      filteredData: unitsToFilter
+    });
+  } catch (err) {
+    console.error('Error during PDF processing:', err);
+    res.status(500).json({ message: 'Error processing PDF', error: err });
+  }
+});
+
+// Helper function to write JSON data to a file
+function writeJsonToFile(data, fileName) {
+  const jsonFilePath = path.join(__dirname, 'uploads', fileName + '.json');
+  fs.writeFileSync(jsonFilePath, JSON.stringify(data, null, 2));
+  return jsonFilePath;
+}
+
+// Middleware to parse JSON request body
+app.use(express.json());
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
